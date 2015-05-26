@@ -261,10 +261,10 @@ class Bank
 
     public function changeRateTo(Rate $rateTo)
     {
-        $event = new ExchangeRateChangedEvent($this->rate, $rateTo);
+        $oldRate = $this->rate;
         $this->rate = $rateTo;
 
-        $this->dispatcher->notify('bank.new_exchange_rate', $event);
+        $this->dispatcher->notify('bank.new_exchange_rate', new ExchangeRateChangedEvent($oldRate, $rateTo));
     }
 }
 
