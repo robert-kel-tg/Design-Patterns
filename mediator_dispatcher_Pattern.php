@@ -185,7 +185,7 @@ class MoneySendEvent
     }
 }
 
-class ExchangeRateChanged
+class ExchangeRateChangedEvent
 {
     private $rateBefore;
     private $rateAfter;
@@ -261,7 +261,7 @@ class Bank
 
     public function changeRateTo(Rate $rateTo)
     {
-        $event = new ExchangeRateChanged($this->rate, $rateTo);
+        $event = new ExchangeRateChangedEvent($this->rate, $rateTo);
         $this->rate = $rateTo;
 
         $this->dispatcher->notify('bank.new_exchange_rate', $event);
@@ -289,7 +289,7 @@ class StockMarket
     }
 }
 // AnyInterestedIn wants to know about the money transfers
-class AnyInterestedIn
+class HumanResources
 {
     private $dispatcher;
 
@@ -302,14 +302,14 @@ class AnyInterestedIn
 
     public function onMoneyTransfer(MoneySendEvent $event)
     {
-        printf("AnyInterestedIn have been notified about the Transfer (Sender: %s and Receiver: %s) <br>",
+        printf("HumanResources have been notified about the Transfer (Sender: %s and Receiver: %s) <br>",
             $event->getTransfer()->getSender()->getName(),
             $event->getTransfer()->getReceiver()->getName());
     }
 
-    public function onExchangeRateChanged(ExchangeRateChanged $event)
+    public function onExchangeRateChanged(ExchangeRateChangedEvent $event)
     {
-        printf("AnyInterestedIn have been notified about the Changed Rate from (%s) to (%s) <br>", $event->getRateBefore(), $event->getRateAfter());
+        printf("HumanResources have been notified about the Changed Rate from (%s) to (%s) <br>", $event->getRateBefore(), $event->getRateAfter());
     }
 }
 //////////////////////////////
@@ -319,7 +319,7 @@ class AnyInterestedIn
 
 $dispatcher = new EventDispatcher();
 $stockMarket = new StockMarket($dispatcher);
-$anyInterestedIn = new AnyInterestedIn($dispatcher);
+$humanResources = new HumanResources($dispatcher);
 
 $transfer = new Transfer(new Sender('Jonas', Money::create(2000)), new Receiver('Petras', Money::create(1000)), Money::create(555.55));
 $dispatcher->addSubscriber('bank.money_transfer', new MoneySendEvent($transfer));
@@ -328,7 +328,6 @@ try {
     $bank = new Bank($dispatcher, Rate::create(2.5));
     $bank->transferMoney($transfer);
     $bank->transferMoney($transfer);
-//    $bank->transferMoney($transfer);
     $bank->changeRateTo(Rate::create(5));
     $bank->changeRateTo(Rate::create(9));
     $bank->changeRateTo(Rate::create(10));
