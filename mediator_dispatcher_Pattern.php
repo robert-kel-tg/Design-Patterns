@@ -108,12 +108,12 @@ class Transfer
 
 class Sender
 {
-    private $name;
+    private $user;
     private $money;
 
-    public function __construct($name, Money $money)
+    public function __construct(User $user, Money $money)
     {
-        $this->name = $name;
+        $this->user = $user;
         $this->money = $money;
     }
 
@@ -127,9 +127,9 @@ class Sender
         $this->money->minus($amount);
     }
 
-    public function getName()
+    public function getUser()
     {
-        return $this->name;
+        return $this->user;
     }
 
     public function getDisposableMoney()
@@ -140,12 +140,12 @@ class Sender
 
 class Receiver
 {
-    private $name;
+    private $user;
     private $money;
 
-    public function __construct($name, Money $money)
+    public function __construct(User $user, Money $money)
     {
-        $this->name = $name;
+        $this->user = $user;
         $this->money = $money;
     }
 
@@ -159,9 +159,9 @@ class Receiver
         $this->money->minus($amount);
     }
 
-    public function getName()
+    public function getUser()
     {
-        return $this->name;
+        return $this->user;
     }
 
     public function getDisposableMoney()
@@ -283,8 +283,8 @@ class StockMarket
     public function onMoneyTransfer(MoneySendEvent $event)
     {
         printf("Stockmarket have been notified about the Transfer (Sender: %s (<strong>%s</strong>) and Receiver: %s (<strong>%s</strong>)) <br>",
-            $event->getTransfer()->getSender()->getName(),
-            $event->getTransfer()->getSender()->getDisposableMoney()->getAmount(), $event->getTransfer()->getReceiver()->getName(),
+            $event->getTransfer()->getSender()->getUser()->getName(),
+            $event->getTransfer()->getSender()->getDisposableMoney()->getAmount(), $event->getTransfer()->getReceiver()->getUser()->getName(),
             $event->getTransfer()->getReceiver()->getDisposableMoney()->getAmount());
     }
 }
@@ -292,10 +292,15 @@ class StockMarket
 class HumanResources
 {
     private $dispatcher;
+    private $userRepository;
+    private $userSpecification;
 
-    public function __construct(EventDispatcher $dispatcher)
+    public function __construct(EventDispatcher $dispatcher, UsersRepository $usersRepository, UserSpecification $userSpecification)
     {
         $this->dispatcher = $dispatcher;
+        $this->userRepository = $usersRepository;
+        $this->userSpecification = $userSpecification;
+
         $this->dispatcher->addListener('bank.money_transfer', array($this, 'onMoneyTransfer'));
         $this->dispatcher->addListener('bank.new_exchange_rate', array($this, 'onExchangeRateChanged'));
     }
@@ -303,8 +308,8 @@ class HumanResources
     public function onMoneyTransfer(MoneySendEvent $event)
     {
         printf("HumanResources have been notified about the Transfer (Sender: %s and Receiver: %s) <br>",
-            $event->getTransfer()->getSender()->getName(),
-            $event->getTransfer()->getReceiver()->getName());
+            $event->getTransfer()->getSender()->getUser()->getName(),
+            $event->getTransfer()->getReceiver()->getUser()->getName());
     }
 
     public function onExchangeRateChanged(ExchangeRateChangedEvent $event)
@@ -313,38 +318,146 @@ class HumanResources
         printf("HumanResources have been notified about the Changed Rate from (%s) to (%s) <br>", $event->getRateBefore(), $event->getRateAfter());
     }
 
-    public function recalculate($rateBefore, $rateAfter)
+    private function recalculate($rateBefore, $rateAfter)
     {
-        printf("<strong>Recalculating salaries from %s to %s</strong>. ", $rateBefore, $rateAfter);
+        $iterator = $this->userRepository->getIterator();
+
+        $iterator->rewind();
+
+        while($iterator->valid()) {
+
+            if($this->userSpecification->isSatisfiedBy($iterator->current())) {
+                $iterator->current()->multiplyByRate(Rate::create($rateAfter));
+
+                printf("<strong>Recalculating salaries by isSatisfiedBy condition for (User: %s with Money: %s) from %s to %s</strong>. <br>",
+                    $iterator->current()->getName(), $iterator->current()->getMoney()->getAmount(), $rateBefore, $rateAfter);
+            };
+
+            $iterator->next();
+        }
+    }
+}
+
+interface UserSpecification
+{
+    public function isSatisfiedBy(User $user);
+}
+
+class UsernameIsUnique implements UserSpecification
+{
+    private $usersRepository;
+
+    public function __construct(UsersRepository $usersRepository)
+    {
+        $this->usersRepository = $usersRepository;
+    }
+
+    public function isSatisfiedBy(User $user)
+    {
+        if($this->usersRepository->findByUsername($user->getName())) {
+            return false;
+        }
+
+        return true;
+    }
+}
+
+class UsernameIsOnly5Letters implements UserSpecification
+{
+    public function isSatisfiedBy(User $user)
+    {
+        if(strlen($user->getName()) > 5) {
+            return false;
+        }
+
+        return true;
     }
 }
 
 class User
 {
+    private $name;
+    private $money;
 
+    public function __construct($name, Money $money)
+    {
+        $this->name = $name;
+        $this->money = $money;
+    }
+
+    public function getName()
+    {
+        return $this->name;
+    }
+
+    public function getMoney()
+    {
+        return $this->money;
+    }
+
+    public function multiplyByRate(Rate $rate)
+    {
+        $this->money->setAmount($this->money->getAmount() * $rate->getRate());
+    }
 }
 
-class UsersRepository
+class UsersRepository implements IteratorAggregate
 {
     private $users = array();
 
     public function add(User $user)
     {
         $id = spl_object_hash($user);
-        $this->users[$id];
+        $this->users[$id] = $user;
     }
 
+    public function getIterator()
+    {
+        return new ArrayIterator($this->users);
+    }
+
+    public function findByUsername($name)
+    {
+        $iterator = $this->getIterator();
+
+        $iterator->rewind();
+
+        while($iterator->valid()) {
+//echo '<pre>';die(print_r($iterator->current()->getName().' === '.$name));echo '</pre>';
+            if($iterator->current()->getName() === $name) {
+                return $iterator->current();
+            }
+
+            $iterator->next();
+        }
+    }
 }
 //////////////////////////////
 
-
+$repository = new UsersRepository();
+$repository->add(new User('Kaz', Money::create(55.20)));
+$repository->add(new User('Kazlas', Money::create(55.20)));
+$repository->add(new User('Zigma', Money::create(120)));
+$repository->add(new User('Vaida', Money::create(25)));
+$repository->add(new User('Kazlaitis', Money::create(70.80)));
 #################################################################################################################
+
+//$userSpecification = new UsernameIsUnique($repository);
+$userSpecification = new UsernameIsOnly5Letters();
 
 $dispatcher = new EventDispatcher();
 $stockMarket = new StockMarket($dispatcher);
-$humanResources = new HumanResources($dispatcher);
+$humanResources = new HumanResources($dispatcher, $repository, $userSpecification);
 
-$transfer = new Transfer(new Sender('Jonas', Money::create(2000)), new Receiver('Petras', Money::create(1000)), Money::create(555.55));
+$transfer = new Transfer(
+                new Sender(
+                        new User('Robertas', Money::create(3000)),
+                        Money::create(2000)
+                ), new Receiver(
+                        new User('Povilas', Money::create(1500)),
+                        Money::create(1000)
+                ), Money::create(555.55)
+            );
 $dispatcher->addSubscriber('bank.money_transfer', new MoneySendEvent($transfer));
 
 try {
