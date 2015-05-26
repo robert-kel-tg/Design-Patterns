@@ -309,8 +309,31 @@ class HumanResources
 
     public function onExchangeRateChanged(ExchangeRateChangedEvent $event)
     {
+        $this->recalculate($event->getRateBefore(), $event->getRateAfter());
         printf("HumanResources have been notified about the Changed Rate from (%s) to (%s) <br>", $event->getRateBefore(), $event->getRateAfter());
     }
+
+    public function recalculate($rateBefore, $rateAfter)
+    {
+        printf("<strong>Recalculating salaries from %s to %s</strong>. ", $rateBefore, $rateAfter);
+    }
+}
+
+class User
+{
+
+}
+
+class UsersRepository
+{
+    private $users = array();
+
+    public function add(User $user)
+    {
+        $id = spl_object_hash($user);
+        $this->users[$id];
+    }
+
 }
 //////////////////////////////
 
