@@ -207,10 +207,41 @@ class ExchangeRateChangedEvent
     }
 }
 
+/**
+ * Mediator/Observer Pattern
+ */
+
 class EventDispatcher
 {
     private $subscribers = array();
     private $events = array();
+
+    /**
+     * Protected constructor to prevent creating a new instance of the
+     * *Singleton* via the `new` operator from outside of this class.
+     */
+    public function __construct() {}
+
+    /**
+     * Private clone method to prevent cloning of the instance of the
+     * *Singleton* instance.
+     */
+    private function __clone() {}
+
+    /**
+     * Private unserialize method to prevent unserializing of the *Singleton*
+     * instance.
+     */
+    private function __wakeup() {}
+
+    public static function getInstance()
+    {
+        static $instance = null;
+        if(null === $instance) {
+            $instance = new static();
+        }
+        return $instance;
+    }
 
     public function addSubscriber($eventName, $event)
     {
@@ -242,6 +273,12 @@ class EventDispatcher
     }
 }
 
+final class BankEvents
+{
+    const MONEY_TRANSFER = 'bank.money_transfer';
+    const NEW_EXCHANGE_RATE = 'bank.new_exchange_rate';
+}
+
 class Bank
 {
     private $dispatcher;
@@ -256,7 +293,7 @@ class Bank
     public function transferMoney(Transfer $transfer)
     {
         $transfer->withdraw();
-        $this->dispatcher->notify('bank.money_transfer');
+        $this->dispatcher->notify(BankEvents::MONEY_TRANSFER);
     }
 
     public function changeRateTo(Rate $rateTo)
@@ -264,10 +301,18 @@ class Bank
         $oldRate = $this->rate;
         $this->rate = $rateTo;
 
-        $this->dispatcher->notify('bank.new_exchange_rate', new ExchangeRateChangedEvent($oldRate, $rateTo));
+        $this->dispatcher->notify(BankEvents::NEW_EXCHANGE_RATE, new ExchangeRateChangedEvent($oldRate, $rateTo));
     }
 }
-
+//
+//// We will create another way of using listener
+//class AnotherDepartmentListener
+//{
+//    public function onMoneyTransfer(MoneySendEvent $moneySendEvent)
+//    {
+//        printf("AnotherDepartmentListener was trigered <br>", $moneySendEvent->getTransfer()->getMoney()->getAmount());
+//    }
+//}
 
 // Stock market wants to know about the money transfers
 class StockMarket
@@ -277,7 +322,7 @@ class StockMarket
     public function __construct(EventDispatcher $dispatcher)
     {
         $this->dispatcher = $dispatcher;
-        $this->dispatcher->addListener('bank.money_transfer', array($this, 'onMoneyTransfer'));
+        $this->dispatcher->addListener(BankEvents::MONEY_TRANSFER, array($this, 'onMoneyTransfer'));
     }
 
     public function onMoneyTransfer(MoneySendEvent $event)
@@ -301,8 +346,8 @@ class HumanResources
         $this->userRepository = $usersRepository;
         $this->userSpecification = $userSpecification;
 
-        $this->dispatcher->addListener('bank.money_transfer', array($this, 'onMoneyTransfer'));
-        $this->dispatcher->addListener('bank.new_exchange_rate', array($this, 'onExchangeRateChanged'));
+        $this->dispatcher->addListener(BankEvents::MONEY_TRANSFER, array($this, 'onMoneyTransfer'));
+        $this->dispatcher->addListener(BankEvents::NEW_EXCHANGE_RATE, array($this, 'onExchangeRateChanged'));
     }
 
     public function onMoneyTransfer(MoneySendEvent $event)
@@ -315,7 +360,8 @@ class HumanResources
     public function onExchangeRateChanged(ExchangeRateChangedEvent $event)
     {
         $this->recalculate($event->getRateBefore(), $event->getRateAfter());
-        printf("HumanResources have been notified about the Changed Rate from (%s) to (%s) <br>", $event->getRateBefore(), $event->getRateAfter());
+        printf("HumanResources have been notified about the Changed Rate from (%s) to (%s) <br>",
+            $event->getRateBefore(), $event->getRateAfter());
     }
 
     private function recalculate($rateBefore, $rateAfter)
@@ -337,6 +383,10 @@ class HumanResources
         }
     }
 }
+
+/**
+ * Specification pattern
+ */
 
 interface UserSpecification
 {
@@ -366,7 +416,7 @@ class UsernameIsOnly5Letters implements UserSpecification
 {
     public function isSatisfiedBy(User $user)
     {
-        if(strlen($user->getName()) > 5) {
+        if(strlen(trim($user->getName())) > 5) {
             return false;
         }
 
@@ -401,6 +451,10 @@ class User
     }
 }
 
+/**
+ * Repository Pattern
+ */
+
 class UsersRepository implements IteratorAggregate
 {
     private $users = array();
@@ -423,7 +477,7 @@ class UsersRepository implements IteratorAggregate
         $iterator->rewind();
 
         while($iterator->valid()) {
-//echo '<pre>';die(print_r($iterator->current()->getName().' === '.$name));echo '</pre>';
+
             if($iterator->current()->getName() === $name) {
                 return $iterator->current();
             }
@@ -435,7 +489,7 @@ class UsersRepository implements IteratorAggregate
 //////////////////////////////
 
 $repository = new UsersRepository();
-$repository->add(new User('Kaz', Money::create(55.20)));
+$repository->add(new User('Kazlas', Money::create(55.20)));
 $repository->add(new User('Kazlas', Money::create(55.20)));
 $repository->add(new User('Zigma', Money::create(120)));
 $repository->add(new User('Vaida', Money::create(25)));
@@ -445,7 +499,7 @@ $repository->add(new User('Kazlaitis', Money::create(70.80)));
 //$userSpecification = new UsernameIsUnique($repository);
 $userSpecification = new UsernameIsOnly5Letters();
 
-$dispatcher = new EventDispatcher();
+$dispatcher = EventDispatcher::getInstance();
 $stockMarket = new StockMarket($dispatcher);
 $humanResources = new HumanResources($dispatcher, $repository, $userSpecification);
 
