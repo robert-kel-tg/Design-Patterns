@@ -243,12 +243,12 @@ class EventDispatcher
         return $instance;
     }
 
-    public function addSubscriber($eventName, $event)
+    private function addSubscriber($eventName, $event)
     {
         $this->subscribers[$eventName] = $event;
     }
 
-    public function getSubscriber($eventName)
+    private function getSubscriber($eventName)
     {
         return $this->subscribers[$eventName];
     }
@@ -293,7 +293,8 @@ class Bank
     public function transferMoney(Transfer $transfer)
     {
         $transfer->withdraw();
-        $this->dispatcher->notify(BankEvents::MONEY_TRANSFER);
+
+        $this->dispatcher->notify(BankEvents::MONEY_TRANSFER, new MoneySendEvent($transfer));
     }
 
     public function changeRateTo(Rate $rateTo)
@@ -304,27 +305,19 @@ class Bank
         $this->dispatcher->notify(BankEvents::NEW_EXCHANGE_RATE, new ExchangeRateChangedEvent($oldRate, $rateTo));
     }
 }
-//
-//// We will create another way of using listener
-//class AnotherDepartmentListener
-//{
-//    public function onMoneyTransfer(MoneySendEvent $moneySendEvent)
-//    {
-//        printf("AnotherDepartmentListener was trigered <br>", $moneySendEvent->getTransfer()->getMoney()->getAmount());
-//    }
-//}
+
+// We will create another way of using listener
+class AnotherDepartmentListener
+{
+    public function onMoneyTransfer(MoneySendEvent $moneySendEvent)
+    {
+        printf("AnotherDepartmentListener was trigered <br>", $moneySendEvent->getTransfer()->getMoney()->getAmount());
+    }
+}
 
 // Stock market wants to know about the money transfers
 class StockMarket
 {
-    private $dispatcher;
-
-    public function __construct(EventDispatcher $dispatcher)
-    {
-        $this->dispatcher = $dispatcher;
-        $this->dispatcher->addListener(BankEvents::MONEY_TRANSFER, array($this, 'onMoneyTransfer'));
-    }
-
     public function onMoneyTransfer(MoneySendEvent $event)
     {
         printf("Stockmarket have been notified about the Transfer (Sender: %s (<strong>%s</strong>) and Receiver: %s (<strong>%s</strong>)) <br>",
@@ -336,18 +329,13 @@ class StockMarket
 // AnyInterestedIn wants to know about the money transfers
 class HumanResources
 {
-    private $dispatcher;
     private $userRepository;
     private $userSpecification;
 
-    public function __construct(EventDispatcher $dispatcher, UsersRepository $usersRepository, UserSpecification $userSpecification)
+    public function __construct(UsersRepository $usersRepository, UserSpecification $userSpecification)
     {
-        $this->dispatcher = $dispatcher;
         $this->userRepository = $usersRepository;
         $this->userSpecification = $userSpecification;
-
-        $this->dispatcher->addListener(BankEvents::MONEY_TRANSFER, array($this, 'onMoneyTransfer'));
-        $this->dispatcher->addListener(BankEvents::NEW_EXCHANGE_RATE, array($this, 'onExchangeRateChanged'));
     }
 
     public function onMoneyTransfer(MoneySendEvent $event)
@@ -499,9 +487,15 @@ $repository->add(new User('Kazlaitis', Money::create(70.80)));
 //$userSpecification = new UsernameIsUnique($repository);
 $userSpecification = new UsernameIsOnly5Letters();
 
+$humanResources = new HumanResources($repository, $userSpecification);
+$stockMarket = new StockMarket();
+$anotherDepartment = new AnotherDepartmentListener();
+
 $dispatcher = EventDispatcher::getInstance();
-$stockMarket = new StockMarket($dispatcher);
-$humanResources = new HumanResources($dispatcher, $repository, $userSpecification);
+$dispatcher->addListener(BankEvents::MONEY_TRANSFER, array($stockMarket, 'onMoneyTransfer'));
+$dispatcher->addListener(BankEvents::MONEY_TRANSFER, array($humanResources, 'onMoneyTransfer'));
+$dispatcher->addListener(BankEvents::MONEY_TRANSFER, array($anotherDepartment, 'onMoneyTransfer'));
+$dispatcher->addListener(BankEvents::NEW_EXCHANGE_RATE, array($humanResources, 'onExchangeRateChanged'));
 
 $transfer = new Transfer(
                 new Sender(
@@ -512,7 +506,6 @@ $transfer = new Transfer(
                         Money::create(1000)
                 ), Money::create(555.55)
             );
-$dispatcher->addSubscriber('bank.money_transfer', new MoneySendEvent($transfer));
 
 try {
     $bank = new Bank($dispatcher, Rate::create(2.5));
